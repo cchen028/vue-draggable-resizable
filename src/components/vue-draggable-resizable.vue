@@ -203,6 +203,10 @@ export default {
       type: Boolean,
       default: false
     },
+    collision: {
+      type: Boolean,
+      default: false
+    },
     scale: {
       type: [Number, Array],
       default: 1,
@@ -330,7 +334,7 @@ export default {
       }
     },
     checkParentSize () {
-      if (this.parent) {
+      if (this.parent || this.collision) {
         const [newParentWidth, newParentHeight] = this.getParentSize()
 
         this.parentWidth = newParentWidth
@@ -340,7 +344,7 @@ export default {
       }
     },
     getParentSize () {
-      if (this.parent) {
+      if (this.parent || this.collision) {
         const style = window.getComputedStyle(this.$el.parentNode, null)
 
         return [
@@ -382,6 +386,16 @@ export default {
           return
         }
 
+        if (this.parent || this.collision) {
+          this.bounds = this.calcDragLimits()
+        }
+
+        if (this.left < this.bounds.minLeft && (this.parentWidth - this.bounds.minLeft - this.width) <= this.bounds.minRight) {
+          this.dragging = false
+
+          return
+        }
+
         if (!this.enabled) {
           this.enabled = true
 
@@ -401,15 +415,110 @@ export default {
         this.mouseClickPosition.top = this.top
         this.mouseClickPosition.bottom = this.bottom
 
-        if (this.parent) {
-          this.bounds = this.calcDragLimits()
-        }
+        // if (this.parent || this.collision) {
+        //   this.bounds = this.calcDragLimits()
+        // }
 
         addEvent(document.documentElement, eventsFor.move, this.move)
         addEvent(document.documentElement, eventsFor.stop, this.handleUp)
       }
     },
+    getHorizontalBounds (type) {
+      const me = this
+      let nodes = me.$el.parentNode.childNodes // 获取当前父节点下所有子节点
+      let leftSiblingWidth = 0
+      let leftSiblingXPosition = 0
+      let rightSiblingXPosition = me.parentWidth
+      let transformValue = me.formatTransformVal(me.$el.style.transform)
+      let isRightSibling = false
+      let index = 0
+      let padding = 0
+
+      for (let node of nodes) {
+        if (node.nodeType === 1 && node.classList.contains('draggable')) {
+          let childTransformValue = me.formatTransformVal(node.style.transform)
+          let isLastElement = index >= nodes.length - 1
+
+          if (node.getAttribute('data-id') === me.$el.getAttribute('data-id') && !isLastElement) {
+            isRightSibling = true
+            continue
+          }
+
+          if (!isRightSibling && !isLastElement) {
+            leftSiblingXPosition = childTransformValue[0]
+            leftSiblingWidth = me.getWidth(node) // node.offsetWidth
+          }
+
+          if (isRightSibling) {
+            rightSiblingXPosition = childTransformValue[0]
+            break
+          }
+          index++
+        }
+      }
+
+      if (type === 'resize') {
+        return { minLeft: leftSiblingXPosition + leftSiblingWidth + padding, maxLeft: transformValue[0] + me.getWidth(me.$el) - padding, minRight: me.parentWidth - rightSiblingXPosition + padding, maxRight: me.parentWidth - transformValue[0] - padding }
+      }
+
+      return { minLeft: leftSiblingXPosition + leftSiblingWidth + padding, maxLeft: rightSiblingXPosition - me.getWidth(me.$el) - padding, minRight: me.parentWidth - rightSiblingXPosition + padding, maxRight: me.parentWidth - leftSiblingXPosition - leftSiblingWidth - me.getWidth(me.$el) - padding }
+      // return { minLeft: leftSiblingXPosition + leftSiblingWidth, maxLeft: rightSiblingXPosition - me.$el.offsetWidth, minRight: me.parentWidth - rightSiblingXPosition, maxRight: me.parentWidth - leftSiblingXPosition - leftSiblingWidth }
+    },
+    getWidth (node) {
+      const style = window.getComputedStyle(node, null)
+      return parseInt(style.getPropertyValue('width'), 10)
+    },
+    // getHorizontalResizeBounds () {
+    //   const me = this
+    //   const nodes = me.$el.parentNode.childNodes // 获取当前父节点下所有子节点
+    //   let leftSiblingWidth = 0
+    //   let leftSiblingXPosition = 0
+    //   let rightSiblingXPosition = me.parentWidth
+    //   let transformValue = me.formatTransformVal(me.$el.style.transform)
+    //   let isRightSibling = false
+    //   let index = 0
+
+    //   for (let node of nodes) {
+    //     if (node.nodeType === 1 && node.classList.contains('resizable')) {
+    //       let childTransformValue = me.formatTransformVal(node.style.transform)
+    //       let isLastElement = index >= nodes.length - 1
+
+    //       if (node.getAttribute('data-id') === me.$el.getAttribute('data-id') && !isLastElement) {
+    //         isRightSibling = true
+    //         continue
+    //       }
+    //       // if (childTransformValue[0] <= transformValue[0]) {
+    //       if (!isRightSibling && !isLastElement) {
+    //         leftSiblingXPosition = childTransformValue[0]
+    //         leftSiblingWidth = me.getWidth(node) // node.offsetWidth
+    //       }
+
+    //       if (isRightSibling) {
+    //         rightSiblingXPosition = childTransformValue[0]
+    //         break
+    //       }
+    //       index++
+    //     }
+    //   }
+
+    //   return { minLeft: leftSiblingXPosition + leftSiblingWidth, maxLeft: transformValue[0] + me.getWidth(me.$el), minRight: me.parentWidth - rightSiblingXPosition, maxRight: me.parentWidth - transformValue[0] }
+    //   // return { minLeft: leftSiblingXPosition + leftSiblingWidth, maxLeft: transformValue[0] + me.$el.offsetWidth, minRight: me.parentWidth - rightSiblingXPosition, maxRight: me.parentWidth - transformValue[0] }
+    // },
     calcDragLimits () {
+      if (this.collision) {
+        const bounds = this.getHorizontalBounds('drag')
+        return {
+          minLeft: bounds.minLeft, // this.left % this.grid[0],
+          maxLeft: bounds.maxLeft, // Math.floor((this.parentWidth - this.width - this.left) / this.grid[0]) * this.grid[0] + this.left,
+          minRight: bounds.minRight, // this.right % this.grid[0],
+          maxRight: bounds.maxRight, // Math.floor((this.parentWidth - this.width - this.right) / this.grid[0]) * this.grid[0] + this.right,
+          minTop: this.top % this.grid[1],
+          maxTop: Math.floor((this.parentHeight - this.height - this.top) / this.grid[1]) * this.grid[1] + this.top,
+          minBottom: this.bottom % this.grid[1],
+          maxBottom: Math.floor((this.parentHeight - this.height - this.bottom) / this.grid[1]) * this.grid[1] + this.bottom
+        }
+      }
+
       return {
         minLeft: this.left % this.grid[0],
         maxLeft: Math.floor((this.parentWidth - this.width - this.left) / this.grid[0]) * this.grid[0] + this.left,
@@ -490,6 +599,7 @@ export default {
       const top = this.top
       const right = this.right
       const bottom = this.bottom
+      const bounds = this.getHorizontalBounds('resize')
 
       if (this.lockAspectRatio) {
         if (minW / minH > aspectFactor) {
@@ -548,6 +658,44 @@ export default {
           limits.minRight = Math.max(limits.minRight, right - bottom * aspectFactor)
           limits.minBottom = Math.max(limits.minBottom, bottom - right / aspectFactor)
         }
+      } else if (this.collision) {
+        limits.minLeft = bounds.minLeft// Math.max(bounds.minLeft, this.parentWidth - right - collisionBound)
+        limits.maxLeft = bounds.maxLeft - minW// bounds.maxLeft
+        limits.minTop = null
+        limits.maxTop = top + Math.floor((height - minH) / gridY) * gridY
+        limits.minRight = bounds.minRight // bounds.maxRight// Math.max(bounds.minRight, this.parentWidth - left - collisionBound)
+        limits.maxRight = bounds.maxRight - minW// bounds.maxRight
+        limits.minBottom = null
+        limits.maxBottom = bottom + Math.floor((height - minH) / gridY) * gridY
+
+        // limits.minLeft = bounds.minLeft// Math.max(bounds.minLeft, this.parentWidth - right - collisionBound)
+        // limits.maxLeft = bounds.minRight// bounds.maxLeft
+        // limits.minTop = null
+        // limits.maxTop = top + Math.floor((height - minH) / gridY) * gridY
+        // limits.minRight = this.parentWidth - bounds.maxRight // bounds.maxRight// Math.max(bounds.minRight, this.parentWidth - left - collisionBound)
+        // limits.maxRight = this.parentWidth - bounds.maxLeft// bounds.maxRight
+        // limits.minBottom = null
+        // limits.maxBottom = bottom + Math.floor((height - minH) / gridY) * gridY
+
+        // if (maxW) {
+        //   limits.minLeft = Math.max(limits.minLeft, this.parentWidth - right - collisionBound)
+        //   limits.minRight = Math.max(limits.minRight, this.parentWidth - left - collisionBound)
+        //   // limits.minLeft = -(right + maxW)
+        //   // limits.minRight = -(left + maxW)
+        // }
+
+        if (maxH) {
+          limits.minTop = -(bottom + maxH)
+          limits.minBottom = -(top + maxH)
+        }
+
+        if (this.lockAspectRatio && (maxW && maxH)) {
+          limits.minLeft = Math.min(limits.minLeft, -(right + maxW))
+          limits.minTop = Math.min(limits.minTop, -(maxH + bottom))
+          limits.minRight = Math.min(limits.minRight, -left - maxW)
+          limits.minBottom = Math.min(limits.minBottom, -top - maxH)
+        }
+        //  || this.collision
       } else {
         limits.minLeft = null
         limits.maxLeft = left + Math.floor((width - minW) / gridX) * gridX
@@ -599,6 +747,16 @@ export default {
       const left = restrictToBounds(mouseClickPosition.left - deltaX, bounds.minLeft, bounds.maxLeft)
       const top = restrictToBounds(mouseClickPosition.top - deltaY, bounds.minTop, bounds.maxTop)
 
+      let direction = 'none'
+
+      if (e.movementX < 0) {
+        direction = 'left'
+      } else if (e.movementX > 0) {
+        direction = 'right'
+      } else {
+        direction = 'none'
+      }
+
       if (this.onDrag(left, top) === false) {
         return
       }
@@ -611,7 +769,12 @@ export default {
       this.right = right
       this.bottom = bottom
 
-      this.$emit('dragging', this.left, this.top)
+      // if (500 - this.right - this.left < 80) {
+      //   console.log('mouseClickPosition.right:' + mouseClickPosition.right)
+      //   console.log('deltaX:' + deltaX)
+      // }
+
+      this.$emit('dragging', this.left, this.top, direction)
       this.dragging = true
     },
     moveHorizontally (val) {
@@ -637,6 +800,13 @@ export default {
       let top = this.top
       let right = this.right
       let bottom = this.bottom
+      let direction = null
+
+      if (this.bounds.maxLeft < this.bounds.minLeft && this.bounds.maxRight - this.bounds.minRight <= Math.max(this.minW, this.width)) {
+        return
+      } else if (this.bounds.maxLeft < this.bounds.minLeft) {
+        this.bounds.maxLeft = this.bounds.minLeft
+      }
 
       const mouseClickPosition = this.mouseClickPosition
       const lockAspectRatio = this.lockAspectRatio
@@ -656,6 +826,7 @@ export default {
       const [deltaX, deltaY] = snapToGrid(this.grid, tmpDeltaX, tmpDeltaY, this.scale)
 
       if (this.handle.includes('b')) {
+        direction = 'down'
         bottom = restrictToBounds(
           mouseClickPosition.bottom + deltaY,
           this.bounds.minBottom,
@@ -666,6 +837,7 @@ export default {
           right = this.right - (this.bottom - bottom) * aspectFactor
         }
       } else if (this.handle.includes('t')) {
+        direction = 'up'
         top = restrictToBounds(
           mouseClickPosition.top - deltaY,
           this.bounds.minTop,
@@ -678,6 +850,7 @@ export default {
       }
 
       if (this.handle.includes('r')) {
+        direction = 'right'
         right = restrictToBounds(
           mouseClickPosition.right + deltaX,
           this.bounds.minRight,
@@ -688,23 +861,35 @@ export default {
           bottom = this.bottom - (this.right - right) / aspectFactor
         }
       } else if (this.handle.includes('l')) {
+        direction = 'left'
         left = restrictToBounds(
           mouseClickPosition.left - deltaX,
           this.bounds.minLeft,
           this.bounds.maxLeft
         )
 
+        if (this.parentWidth - right - left < this.minWidth) {
+          right = right - this.minWidth
+        }
         if (this.lockAspectRatio && this.resizingOnX) {
           top = this.top - (this.left - left) / aspectFactor
         }
       }
 
-      const width = computeWidth(this.parentWidth, left, right)
+      let width = computeWidth(this.parentWidth, left, right)
       const height = computeHeight(this.parentHeight, top, bottom)
+
+      // if ((!width && width !== 0) || width < 0) {
+      //   console.log('wef')
+      // }
 
       if (this.onResize(this.handle, left, top, width, height) === false) {
         return
       }
+
+      // if (this.bounds.maxLeft <= this.bounds.minLeft) {
+      //   return
+      // }
 
       this.left = left
       this.top = top
@@ -713,7 +898,7 @@ export default {
       this.width = width
       this.height = height
 
-      this.$emit('resizing', this.left, this.top, this.width, this.height)
+      this.$emit('resizing', this.left, this.top, this.width, this.height, direction)
       this.resizing = true
     },
     changeWidth (val) {
@@ -781,6 +966,11 @@ export default {
       }
 
       removeEvent(document.documentElement, eventsFor.move, this.handleResize)
+    },
+    formatTransformVal (string) {
+      let [left, top] = string.replace(/[^0-9\-,.]/g, '').split(',')
+      if (top === undefined) top = 0
+      return [+left, +top]
     }
   },
   computed: {
@@ -858,7 +1048,7 @@ export default {
         return
       }
 
-      if (this.parent) {
+      if (this.parent || this.collision) {
         this.bounds = this.calcDragLimits()
       }
 
@@ -903,7 +1093,7 @@ export default {
         return
       }
 
-      if (this.parent) {
+      if (this.parent || this.collision) {
         this.bounds = this.calcResizeLimits()
       }
 

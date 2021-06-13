@@ -31,13 +31,13 @@
 .handle-ml {
   top: 50%;
   margin-top: -5px;
-  left: -10px;
+  left: 0px;
   cursor: w-resize;
 }
 .handle-mr {
   top: 50%;
   margin-top: -5px;
-  right: -10px;
+  right: 0px;
   cursor: e-resize;
 }
 .handle-bl {
